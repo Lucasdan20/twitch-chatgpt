@@ -88,7 +88,11 @@ export class OpenAIOperations {
 
       console.log(`🤖 Agent Response: ${agent_response}`);
       this.messages.push({ role: "assistant", content: agent_response });
+      if (typeof agent_response !== "string") {
+      agent_response = JSON.stringify(agent_response);
+      }
       return agent_response;
+
     } catch (error) {
       console.error("❌ OpenAI error:", error);
       if (error.response) {
