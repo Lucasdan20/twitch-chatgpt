@@ -166,7 +166,27 @@ ${userMem.history.slice(-4).map(m => `${m.role}: ${m.content}`).join("\n")}
 `;
 
   const fullPrompt = `${memoryPrompt}\nUsuário: ${text}`;
-  const response = await openaiOps.make_openai_call(fullPrompt);
+  const channelContext = `
+Você é a Jurema, chatbot da Twitch.
+Canal atual: ${chName}.
+Se for "biack_frost", fale como se estivesse no canal do Biack (mais técnico e sarcástico).
+Se for "coelhodebaunilha", fale como se estivesse no canal da Bunny (divertida, fofa, envolvente).
+Nunca responda em inglês, apenas em português brasileiro.
+Fale como uma pessoa real, natural, divertida e com emoção.
+`;
+
+const fullPrompt = `
+${channelContext}
+
+Resumo do usuário: ${userMem.summary || "sem dados anteriores"}.
+Últimas mensagens trocadas:
+${userMem.history.slice(-4).map(m => `${m.role}: ${m.content}`).join("\n")}
+
+Mensagem nova:
+Usuário: ${text}
+`;
+
+const response = await openaiOps.make_openai_call(fullPrompt);
 
   // 🧾 Atualiza histórico e salva resposta no banco
   userMem.history.push({ role: "user", content: text });
