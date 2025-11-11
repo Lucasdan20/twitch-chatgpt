@@ -37,6 +37,7 @@ export class OpenAIOperations {
       ) {
         // 🚀 Novo endpoint (responses.create)
         const response = await this.openai.responses.create({
+          console.log("🟢 Enviando para OpenAI:", text);
           model: this.model_name,
           input: [
             {
