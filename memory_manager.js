@@ -1,60 +1,57 @@
-// memory_manager.js
-import sqlite3 from "sqlite3";
-import { open } from "sqlite";
-import path from "path";
 import fs from "fs";
+import path from "path";
+
+let sqlite3;
+try {
+  sqlite3 = await import("sqlite3");
+  console.log("✅ Usando sqlite3");
+} catch (err) {
+  console.warn("⚠️ sqlite3 não encontrado, usando better-sqlite3...");
+  sqlite3 = await import("better-sqlite3");
+}
+
+const { Database } = sqlite3.verbose ? sqlite3.verbose() : sqlite3;
 
 export class MemoryManager {
   constructor(channelName) {
-    this.channelName = channelName.toLowerCase().replace("#", "");
-    this.dbPath = path.resolve("memory", `${this.channelName}.db`);
-    this.db = null;
-  }
+    const dir = path.join(process.cwd(), "memory");
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+    this.dbPath = path.join(dir, `${channelName}.db`);
+    this.db = new Database(this.dbPath);
 
-  async init() {
-    // Garante que a pasta exista
-    if (!fs.existsSync("memory")) {
-      fs.mkdirSync("memory");
-      console.log("📁 Pasta 'memory' criada com sucesso!");
-    }
-
-    // Abre ou cria o banco
-    this.db = await open({
-      filename: this.dbPath,
-      driver: sqlite3.Database,
-    });
-
-    // Cria tabela se não existir
-    await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS memories (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT,
-        message TEXT,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    this.db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS users (
+          username TEXT PRIMARY KEY,
+          summary TEXT,
+          history TEXT
+        )`
       )
-    `);
-
-    console.log(`🧠 Banco de memória pronto para o canal: ${this.channelName}`);
+      .run();
   }
 
-  // Salva mensagens
-  async saveMessage(username, message) {
-    if (!this.db) await this.init();
-    await this.db.run("INSERT INTO memories (username, message) VALUES (?, ?)", [
-      username,
-      message,
-    ]);
-    console.log(`💾 [${this.channelName}] Mensagem salva: ${username}: "${message}"`);
+  getUser(username) {
+    const row = this.db
+      .prepare("SELECT * FROM users WHERE username = ?")
+      .get(username);
+    if (row) {
+      return {
+        summary: row.summary || "",
+        history: JSON.parse(row.history || "[]"),
+      };
+    }
+    return { summary: "", history: [] };
   }
 
-  // Recupera últimas mensagens (para contexto)
-  async getRecentMessages(limit = 10) {
-    if (!this.db) await this.init();
-    const rows = await this.db.all(
-      "SELECT username, message FROM memories ORDER BY id DESC LIMIT ?",
-      [limit]
-    );
-    console.log(`📜 [${this.channelName}] Carregando ${rows.length} mensagens anteriores.`);
-    return rows.reverse(); // do mais antigo pro mais novo
+  saveUser(username, summary, history) {
+    const histJson = JSON.stringify(history);
+    this.db
+      .prepare(
+        `INSERT INTO users (username, summary, history)
+         VALUES (?, ?, ?)
+         ON CONFLICT(username)
+         DO UPDATE SET summary = excluded.summary, history = excluded.history`
+      )
+      .run(username, summary, histJson);
   }
 }
