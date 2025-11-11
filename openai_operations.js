@@ -21,6 +21,9 @@ export class OpenAIOperations {
     }
   }
 
+  // =======================================================================
+  // PRINCIPAL — chamada para GPT (usado pelo !gpt no chat)
+  // =======================================================================
   async make_openai_call(text) {
     try {
       // adiciona a mensagem do usuário ao histórico
@@ -29,15 +32,16 @@ export class OpenAIOperations {
 
       let agent_response = "";
 
-      // 🔍 Detecta automaticamente se deve usar o endpoint novo ou o antigo
+      // 🚀 Envia log do texto que vai pra API
+      console.log("🟢 Enviando para OpenAI:", text);
+
+      // Detecta automaticamente se usa o endpoint novo (GPT-5 / 4o) ou antigo
       if (
         this.model_name.startsWith("gpt-5") ||
         this.model_name.startsWith("gpt-4.1") ||
         this.model_name.startsWith("gpt-4o")
       ) {
-        
-        console.log("🟢 Enviando para OpenAI:", text);
-        // 🚀 Novo endpoint (responses.create)
+        // 🔹 Novo endpoint (responses.create)
         const response = await this.openai.responses.create({
           model: this.model_name,
           input: [
@@ -55,10 +59,10 @@ export class OpenAIOperations {
           max_output_tokens: 256,
         });
 
-        // Log detalhado pra depuração
+        // Log completo da resposta bruta pra debug
         console.log("🔍 Full API response:", JSON.stringify(response, null, 2));
 
-        // Tenta extrair de todos os formatos possíveis
+        // Tenta extrair texto em todos os formatos possíveis
         agent_response =
           response.output_text ||
           response.output?.[0]?.content?.[0]?.text ||
@@ -87,10 +91,17 @@ export class OpenAIOperations {
       return agent_response;
     } catch (error) {
       console.error("❌ OpenAI error:", error);
+      if (error.response) {
+        console.error("🔻 Response status:", error.response.status);
+        console.error("🔻 Response data:", JSON.stringify(error.response.data, null, 2));
+      }
       return "Sorry, something went wrong. Please try again later.";
     }
   }
 
+  // =======================================================================
+  // Modo PROMPT (usado se GPT_MODE = PROMPT)
+  // =======================================================================
   async make_openai_call_completion(text) {
     try {
       const response = await this.openai.completions.create({
@@ -107,7 +118,11 @@ export class OpenAIOperations {
       console.log(`Agent Response: ${agent_response}`);
       return agent_response;
     } catch (error) {
-      console.error("❌ OpenAI completion error:", error);
+      console.error("❌ OpenAI error:", error);
+      if (error.response) {
+        console.error("🔻 Response status:", error.response.status);
+        console.error("🔻 Response data:", JSON.stringify(error.response.data, null, 2));
+      }
       return "Sorry, something went wrong. Please try again later.";
     }
   }
