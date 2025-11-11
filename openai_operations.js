@@ -50,8 +50,10 @@ export class OpenAIOperations {
 
 
         agent_response =
-          response.output?.[0]?.content?.[0]?.text ||
-          "Sem resposta do modelo.";
+        response.output_text ||
+        response.output?.[0]?.content?.[0]?.text ||
+        "Sem resposta do modelo.";
+
       } else {
         // 💬 Endpoint antigo (chat.completions.create)
         const response = await this.openai.chat.completions.create({
