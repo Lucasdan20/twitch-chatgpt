@@ -1,4 +1,3 @@
-// Importa o SDK oficial da OpenAI
 import OpenAI from "openai";
 
 export class OpenAIOperations {
@@ -14,7 +13,7 @@ export class OpenAIOperations {
       `Conversations in History: ${((this.messages.length / 2) - 1)}/${this.history_length}`
     );
     if (this.messages.length > this.history_length * 2 + 1) {
-      console.log("Message amount in history exceeded. Removing oldest user and agent messages.");
+      console.log("Message amount in history exceeded. Removing oldest messages.");
       this.messages.splice(1, 2);
     }
   }
@@ -30,25 +29,20 @@ export class OpenAIOperations {
       let agent_response = "";
       console.log("🟢 Enviando para OpenAI:", text);
 
-      // ==============================================================
-      // GPT-5 / 4.1 / 4o (novo endpoint responses.create)
-      // ==============================================================
       if (
         this.model_name.startsWith("gpt-5") ||
         this.model_name.startsWith("gpt-4.1") ||
         this.model_name.startsWith("gpt-4o")
       ) {
-        let response;
+        let iteration = 0;
         let full_output = [];
         let incomplete = true;
-        let iteration = 0;
 
-        // 🔁 Faz várias requisições automáticas até completar (auto continue)
         while (incomplete && iteration < 5) {
           iteration++;
           console.log(`⚙️ Gerando parte ${iteration} da resposta...`);
 
-          response = await this.openai.responses.create({
+          const response = await this.openai.responses.create({
             model: this.model_name,
             input: [
               {
@@ -62,32 +56,41 @@ export class OpenAIOperations {
             max_output_tokens: 1024,
           });
 
-          console.log(`📦 Parte ${iteration}:`, response.status);
+          console.log(`📦 Parte ${iteration} status: ${response.status}`);
 
-          if (response.output && response.output.length > 0) {
+          if (response.output) {
             full_output.push(...response.output);
           }
 
-          // Sai do loop se a resposta estiver completa
-          incomplete = response.status === "incomplete" && 
-                       response.incomplete_details?.reason === "max_output_tokens";
+          incomplete =
+            response.status === "incomplete" &&
+            response.incomplete_details?.reason === "max_output_tokens";
+
+          if (!incomplete) console.log(`✅ Parte ${iteration} concluída.`);
         }
 
-        // 🔹 Extrai texto consolidado
-        const textParts = full_output
-          .map((item) => {
-            if (item.type === "output_text") return item.content?.[0]?.text;
-            if (item.type === "reasoning") return item.summary?.join(" ");
-            return null;
-          })
-          .filter(Boolean);
+        // 🔹 Extrai o texto consolidado
+        const textParts = [];
+        for (const item of full_output) {
+          if (item.type === "output_text" && item.content?.length) {
+            for (const chunk of item.content) {
+              if (chunk.text) textParts.push(chunk.text);
+            }
+          } else if (item.type === "message" && item.content?.length) {
+            for (const chunk of item.content) {
+              if (chunk.text) textParts.push(chunk.text);
+            }
+          } else if (item.type === "reasoning" && item.summary?.length) {
+            textParts.push(item.summary.join(" "));
+          }
+        }
 
         agent_response = textParts.join(" ").trim() || "Sem resposta do modelo.";
 
-      // ==============================================================
-      // GPT-3.5 ou anterior (chat.completions)
-      // ==============================================================
       } else {
+        // ==============================================================
+        // GPT-3.5 ou anterior
+        // ==============================================================
         const response = await this.openai.chat.completions.create({
           model: this.model_name,
           messages: this.messages,
@@ -99,12 +102,10 @@ export class OpenAIOperations {
         });
 
         agent_response =
-          response.choices?.[0]?.message?.content ||
-          "Sem resposta do modelo.";
+          response.choices?.[0]?.message?.content || "Sem resposta do modelo.";
       }
 
       console.log(`🤖 Agent Response: ${agent_response}`);
-
       this.messages.push({ role: "assistant", content: agent_response });
 
       if (typeof agent_response !== "string") {
@@ -124,7 +125,7 @@ export class OpenAIOperations {
   }
 
   // =======================================================================
-  // ✏️ Modo PROMPT (usado se GPT_MODE = PROMPT)
+  // ✏️ Modo PROMPT
   // =======================================================================
   async make_openai_call_completion(text) {
     try {
@@ -138,7 +139,9 @@ export class OpenAIOperations {
         presence_penalty: 0,
       });
 
-      let agent_response = response.choices?.[0]?.text || "Sem resposta do modelo.";
+      const agent_response =
+        response.choices?.[0]?.text?.trim() || "Sem resposta do modelo.";
+
       console.log(`Agent Response: ${agent_response}`);
       return agent_response;
     } catch (error) {
