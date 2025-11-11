@@ -49,7 +49,7 @@ export class OpenAIOperations {
               role: "user",
               content: [
                 {
-                  type: "text",
+                  type: "input_text",
                   text: text
                 }
               ]
