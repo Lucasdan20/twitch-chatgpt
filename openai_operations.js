@@ -29,7 +29,7 @@ export class OpenAIOperations {
 
       let agent_response = "";
 
-      // 🔍 detecta automaticamente se deve usar o endpoint novo ou o antigo
+      // 🔍 Detecta automaticamente se deve usar o endpoint novo ou o antigo
       if (
         this.model_name.startsWith("gpt-5") ||
         this.model_name.startsWith("gpt-4.1") ||
@@ -37,23 +37,32 @@ export class OpenAIOperations {
       ) {
         // 🚀 Novo endpoint (responses.create)
         const response = await this.openai.responses.create({
-        model: this.model_name,
-        input: [
-        {
-        role: "user",
-        content: text
-      }
-        ],
-        temperature: 1,
-        max_output_tokens: 256,
+          model: this.model_name,
+          input: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: text
+                }
+              ]
+            }
+          ],
+          temperature: 1,
+          max_output_tokens: 256,
         });
 
+        // Log detalhado pra depuração
+        console.log("🔍 Full API response:", JSON.stringify(response, null, 2));
 
+        // Tenta extrair de todos os formatos possíveis
         agent_response =
-        response.output_text ||
-        response.output?.[0]?.content?.[0]?.text ||
-        "Sem resposta do modelo.";
-
+          response.output_text ||
+          response.output?.[0]?.content?.[0]?.text ||
+          response.output?.[0]?.content?.text ||
+          response.output ||
+          "Sem resposta do modelo.";
       } else {
         // 💬 Endpoint antigo (chat.completions.create)
         const response = await this.openai.chat.completions.create({
@@ -71,7 +80,7 @@ export class OpenAIOperations {
           "Sem resposta do modelo.";
       }
 
-      console.log(`Agent Response: ${agent_response}`);
+      console.log(`🤖 Agent Response: ${agent_response}`);
       this.messages.push({ role: "assistant", content: agent_response });
       return agent_response;
     } catch (error) {
