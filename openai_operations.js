@@ -1,3 +1,4 @@
+// Importa o SDK oficial da OpenAI
 import OpenAI from "openai";
 
 export class OpenAIOperations {
@@ -10,10 +11,10 @@ export class OpenAIOperations {
 
   check_history_length() {
     console.log(
-      `Conversations in History: ${((this.messages.length / 2) - 1)}/${this.history_length}`
+      `🧾 Histórico: ${((this.messages.length / 2) - 1)}/${this.history_length}`
     );
     if (this.messages.length > this.history_length * 2 + 1) {
-      console.log("Message amount in history exceeded. Removing oldest messages.");
+      console.log("🧹 Histórico cheio, removendo mensagens antigas...");
       this.messages.splice(1, 2);
     }
   }
@@ -23,77 +24,77 @@ export class OpenAIOperations {
   // =======================================================================
   async make_openai_call(text) {
     try {
+      // Adiciona mensagem do usuário
       this.messages.push({ role: "user", content: text });
       this.check_history_length();
 
-      let agent_response = "";
       console.log("🟢 Enviando para OpenAI:", text);
 
+      // Instrução extra para manter o estilo e idioma
+      const style_reinforcement = `
+Fale APENAS em português brasileiro.
+Responda no tom da Jurema: divertida, carismática, debochada, natural e envolvente.
+Seja humana e espontânea — nunca pareça um robô.
+`;
+
+      let agent_response = "";
+
+      // ==============================================================
+      // GPT-4.1 / GPT-5 / GPT-4o — novo endpoint
+      // ==============================================================
       if (
         this.model_name.startsWith("gpt-5") ||
         this.model_name.startsWith("gpt-4.1") ||
         this.model_name.startsWith("gpt-4o")
       ) {
-        let iteration = 0;
-        let full_output = [];
-        let incomplete = true;
+        const response = await this.openai.responses.create({
+          model: this.model_name,
+          input: [
+            {
+              role: "system",
+              content: [
+                { type: "input_text", text: style_reinforcement }
+              ]
+            },
+            {
+              role: "user",
+              content: [
+                { type: "input_text", text: text }
+              ]
+            }
+          ],
+          temperature: 1,
+          max_output_tokens: 2048, // maior para evitar corte
+        });
 
-        while (incomplete && iteration < 5) {
-          iteration++;
-          console.log(`⚙️ Gerando parte ${iteration} da resposta...`);
+        console.log("🔍 Full API response:", JSON.stringify(response, null, 2));
 
-          const response = await this.openai.responses.create({
-            model: this.model_name,
-            input: [
-              {
-                role: "user",
-                content: [
-                  { type: "input_text", text: iteration === 1 ? text : "continue" }
-                ]
-              }
-            ],
-            temperature: 1,
-            max_output_tokens: 1024,
-          });
-
-          console.log(`📦 Parte ${iteration} status: ${response.status}`);
-
-          if (response.output) {
-            full_output.push(...response.output);
-          }
-
-          incomplete =
-            response.status === "incomplete" &&
-            response.incomplete_details?.reason === "max_output_tokens";
-
-          if (!incomplete) console.log(`✅ Parte ${iteration} concluída.`);
+        // Captura resposta completa
+        if (response.output_text && response.output_text.trim() !== "") {
+          agent_response = response.output_text.trim();
+        } else if (response.output && response.output.length > 0) {
+          const textParts = response.output
+            .map((item) => {
+              if (item.type === "output_text") return item.content?.[0]?.text;
+              if (item.type === "reasoning") return item.summary?.join(" ");
+              return null;
+            })
+            .filter(Boolean);
+          agent_response = textParts.join("\n").trim();
+        } else {
+          agent_response = "Sem resposta do modelo.";
         }
 
-        // 🔹 Extrai o texto consolidado
-        const textParts = [];
-        for (const item of full_output) {
-          if (item.type === "output_text" && item.content?.length) {
-            for (const chunk of item.content) {
-              if (chunk.text) textParts.push(chunk.text);
-            }
-          } else if (item.type === "message" && item.content?.length) {
-            for (const chunk of item.content) {
-              if (chunk.text) textParts.push(chunk.text);
-            }
-          } else if (item.type === "reasoning" && item.summary?.length) {
-            textParts.push(item.summary.join(" "));
-          }
-        }
-
-        agent_response = textParts.join(" ").trim() || "Sem resposta do modelo.";
-
+      // ==============================================================
+      // GPT-3.5 ou versões antigas
+      // ==============================================================
       } else {
-        // ==============================================================
-        // GPT-3.5 ou anterior
-        // ==============================================================
         const response = await this.openai.chat.completions.create({
           model: this.model_name,
-          messages: this.messages,
+          messages: [
+            { role: "system", content: `${style_reinforcement}\n${this.messages[0].content}` },
+            ...this.messages.slice(1),
+          ],
           temperature: 1,
           max_tokens: 1024,
           top_p: 1,
@@ -105,9 +106,11 @@ export class OpenAIOperations {
           response.choices?.[0]?.message?.content || "Sem resposta do modelo.";
       }
 
-      console.log(`🤖 Agent Response: ${agent_response}`);
+      console.log(`🤖 Resposta da Jurema: ${agent_response}`);
+
       this.messages.push({ role: "assistant", content: agent_response });
 
+      // Garante tipo string
       if (typeof agent_response !== "string") {
         agent_response = JSON.stringify(agent_response);
       }
@@ -115,17 +118,17 @@ export class OpenAIOperations {
       return agent_response;
 
     } catch (error) {
-      console.error("❌ OpenAI error:", error);
+      console.error("❌ Erro OpenAI:", error);
       if (error.response) {
-        console.error("🔻 Response status:", error.response.status);
-        console.error("🔻 Response data:", JSON.stringify(error.response.data, null, 2));
+        console.error("🔻 Status:", error.response.status);
+        console.error("🔻 Data:", JSON.stringify(error.response.data, null, 2));
       }
-      return "Desculpe, algo deu errado. Tente novamente 💜";
+      return "A Jurema ficou confusa por um instante 😵‍💫 Tenta de novo rapidinho!";
     }
   }
 
   // =======================================================================
-  // ✏️ Modo PROMPT
+  // ✏️ Modo PROMPT (usado se GPT_MODE = PROMPT)
   // =======================================================================
   async make_openai_call_completion(text) {
     try {
@@ -139,18 +142,16 @@ export class OpenAIOperations {
         presence_penalty: 0,
       });
 
-      const agent_response =
-        response.choices?.[0]?.text?.trim() || "Sem resposta do modelo.";
-
-      console.log(`Agent Response: ${agent_response}`);
+      let agent_response = response.choices?.[0]?.text || "Sem resposta do modelo.";
+      console.log(`🧠 Agent Response: ${agent_response}`);
       return agent_response;
     } catch (error) {
-      console.error("❌ OpenAI error:", error);
+      console.error("❌ Erro OpenAI:", error);
       if (error.response) {
-        console.error("🔻 Response status:", error.response.status);
-        console.error("🔻 Response data:", JSON.stringify(error.response.data, null, 2));
+        console.error("🔻 Status:", error.response.status);
+        console.error("🔻 Data:", JSON.stringify(error.response.data, null, 2));
       }
-      return "Desculpe, algo deu errado. Tente novamente 💜";
+      return "A Jurema bugou rapidinho, tenta outra vez 💫";
     }
   }
 }
