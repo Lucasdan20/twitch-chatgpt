@@ -7,6 +7,7 @@ import expressWs from 'express-ws';
 import { job } from './keep_alive.js';
 import { OpenAIOperations } from './openai_operations.js';
 import { TwitchBot } from './twitch_bot.js';
+import { MemoryManager } from './memory_manager.js';
 
 // ------------------------------
 // 🔧 CONFIGURAÇÃO BASE
@@ -25,11 +26,11 @@ const __dirname = path.dirname(__filename);
 const GPT_MODE = process.env.GPT_MODE || 'CHAT';
 const HISTORY_LENGTH = process.env.HISTORY_LENGTH || 5;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
-const MODEL_NAME = process.env.MODEL_NAME || 'gpt-3.5-turbo';
+const MODEL_NAME = process.env.MODEL_NAME || 'gpt-4o-mini';
 const TWITCH_USER = process.env.TWITCH_USER || 'oSetinhasBot';
-const TWITCH_AUTH = process.env.TWITCH_AUTH || 'oauth:vgvx55j6qzz1lkt3cwggxki1lv53c2';
+const TWITCH_AUTH = process.env.TWITCH_AUTH || '';
 const COMMAND_NAME = process.env.COMMAND_NAME || '!gpt';
-const CHANNELS = process.env.CHANNELS || 'oSetinhas,jones88';
+const CHANNELS = process.env.CHANNELS || 'coelhodebaunilha,biack_frost';
 const SEND_USERNAME = process.env.SEND_USERNAME || 'true';
 const ENABLE_TTS = process.env.ENABLE_TTS || 'false';
 const ENABLE_CHANNEL_POINTS = process.env.ENABLE_CHANNEL_POINTS || 'false';
@@ -42,6 +43,7 @@ if (!OPENAI_API_KEY) {
 // ------------------------------
 // ⚙️ FUNÇÕES DE SUPORTE
 // ------------------------------
+
 function normChannel(raw) {
   return raw.replace(/^#/, '').trim().toLowerCase();
 }
@@ -49,7 +51,7 @@ function normChannel(raw) {
 function loadContextFor(channelName) {
   const contextsDir = path.join(__dirname, 'contexts');
   const perChannelPath = path.join(contextsDir, `${channelName}.txt`);
-  const defaultPath = path.join(__dirname, 'file_context.txt');
+  const defaultPath = path.join(contextsDir, 'file_context.txt');
 
   if (fs.existsSync(perChannelPath)) {
     console.log(`📄 Loaded context for channel: ${channelName}`);
@@ -73,13 +75,16 @@ console.log('Channels:', channels);
 
 const bot = new TwitchBot(TWITCH_USER, TWITCH_AUTH, channels, OPENAI_API_KEY, ENABLE_TTS);
 
-// cria uma instância do OpenAI pra cada canal
+// Instâncias de OpenAI e Memória por canal
 const opsByChannel = new Map();
+const memoryByChannel = new Map();
+
 channels.forEach(c => {
   const name = normChannel(c);
   const context = loadContextFor(name);
   const ops = new OpenAIOperations(context, OPENAI_API_KEY, MODEL_NAME, HISTORY_LENGTH);
   opsByChannel.set(name, ops);
+  memoryByChannel.set(name, new MemoryManager(name));
 });
 
 // ------------------------------
@@ -115,10 +120,16 @@ bot.onMessage(async (channel, user, message, self) => {
 
   const chName = normChannel(channel);
   const openaiOps = opsByChannel.get(chName) || opsByChannel.values().next().value;
+  const memory = memoryByChannel.get(chName);
+
+  if (!memory) {
+    console.error(`Nenhuma memória encontrada para o canal ${chName}`);
+    return;
+  }
 
   if (ENABLE_CHANNEL_POINTS === 'true' && user['msg-id'] === 'highlighted-message') {
     if (elapsedTime < COOLDOWN_DURATION) {
-      bot.say(channel, `Cooldown active. Please wait ${COOLDOWN_DURATION - elapsedTime.toFixed(1)} seconds before sending another message.`);
+      bot.say(channel, `Cooldown ativo. Espere ${COOLDOWN_DURATION - elapsedTime.toFixed(1)}s antes de mandar outra mensagem.`);
       return;
     }
     lastResponseTime = currentTime;
@@ -127,35 +138,69 @@ bot.onMessage(async (channel, user, message, self) => {
   }
 
   const command = commandNames.find(cmd => message.toLowerCase().startsWith(cmd));
-  if (command) {
-    if (elapsedTime < COOLDOWN_DURATION) {
-      bot.say(channel, `Cooldown active. Please wait ${COOLDOWN_DURATION - elapsedTime.toFixed(1)} seconds before sending another message.`);
-      return;
-    }
-    lastResponseTime = currentTime;
+  if (!command) return;
 
-    let text = message.slice(command.length).trim();
-    if (SEND_USERNAME === 'true') {
-      text = `Message from user ${user.username}: ${text}`;
-    }
+  if (elapsedTime < COOLDOWN_DURATION) {
+    bot.say(channel, `Cooldown ativo. Espere ${COOLDOWN_DURATION - elapsedTime.toFixed(1)}s antes de mandar outra mensagem.`);
+    return;
+  }
+  lastResponseTime = currentTime;
 
-    const response = await openaiOps.make_openai_call(text);
-    if (response.length > maxLength) {
-      const messages = response.match(new RegExp(`.{1,${maxLength}}`, 'g'));
-      messages.forEach((msg, index) => {
-        setTimeout(() => bot.say(channel, msg), 1000 * index);
-      });
-    } else {
-      bot.say(channel, response);
-    }
+  let text = message.slice(command.length).trim();
+  if (SEND_USERNAME === 'true') {
+    text = `Mensagem do usuário ${user.username}: ${text}`;
+  }
 
-    if (ENABLE_TTS === 'true') {
-      try {
-        const ttsAudioUrl = await bot.sayTTS(channel, response, user['userstate']);
-        notifyFileChange(ttsAudioUrl);
-      } catch (error) {
-        console.error('TTS Error:', error);
-      }
+  // ------------------------------
+  // 🧠 CARREGA MEMÓRIA DO USUÁRIO
+  // ------------------------------
+  const userMem = memory.getUser(user.username);
+
+  const memoryPrompt = `
+Você é a Jurema neste canal (${chName}).
+Resumo do usuário: ${userMem.summary || "sem dados anteriores"}.
+Últimas mensagens trocadas:
+${userMem.history.slice(-4).map(m => `${m.role}: ${m.content}`).join("\n")}
+`;
+
+  const fullPrompt = `${memoryPrompt}\nUsuário: ${text}`;
+  const response = await openaiOps.make_openai_call(fullPrompt);
+
+  // Atualiza histórico e salva no banco
+  userMem.history.push({ role: "user", content: text });
+  userMem.history.push({ role: "assistant", content: response });
+
+  // Faz resumo automático de tempos em tempos
+  if (userMem.history.length > 10) {
+    try {
+      const resumo = await openaiOps.make_openai_call(
+        `Resuma a personalidade e preferências desse usuário:\n${JSON.stringify(userMem.history)}`
+      );
+      userMem.summary = resumo;
+      userMem.history = userMem.history.slice(-6);
+    } catch (err) {
+      console.error("Erro ao gerar resumo:", err);
+    }
+  }
+
+  memory.saveUser(user.username, userMem.summary, userMem.history);
+
+  // Envia pro chat
+  if (response.length > maxLength) {
+    const messages = response.match(new RegExp(`.{1,${maxLength}}`, 'g'));
+    messages.forEach((msg, index) => {
+      setTimeout(() => bot.say(channel, msg), 1000 * index);
+    });
+  } else {
+    bot.say(channel, response);
+  }
+
+  if (ENABLE_TTS === 'true') {
+    try {
+      const ttsAudioUrl = await bot.sayTTS(channel, response, user['userstate']);
+      notifyFileChange(ttsAudioUrl);
+    } catch (error) {
+      console.error('TTS Error:', error);
     }
   }
 });
@@ -167,11 +212,6 @@ bot.onMessage(async (channel, user, message, self) => {
 app.ws('/check-for-updates', (ws, req) => {
   ws.on('message', message => {});
 });
-
-const messages = [{ role: 'system', content: 'You are a helpful Twitch Chatbot.' }];
-console.log('GPT_MODE:', GPT_MODE);
-console.log('History length:', HISTORY_LENGTH);
-console.log('Model Name:', MODEL_NAME);
 
 app.use(express.json({ extended: true, limit: '1mb' }));
 app.use('/public', express.static('public'));
@@ -186,14 +226,7 @@ app.get('/gpt/:text', async (req, res) => {
   let answer = '';
   try {
     const defaultOps = opsByChannel.values().next().value;
-    if (GPT_MODE === 'CHAT') {
-      answer = await defaultOps.make_openai_call(text);
-    } else if (GPT_MODE === 'PROMPT') {
-      const prompt = `${fileContext}\n\nUser: ${text}\nAgent:`;
-      answer = await defaultOps.make_openai_call_completion(prompt);
-    } else {
-      throw new Error('GPT_MODE is not set to CHAT or PROMPT.');
-    }
+    answer = await defaultOps.make_openai_call(text);
     res.send(answer);
   } catch (error) {
     console.error('Error generating response:', error);
