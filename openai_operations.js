@@ -37,11 +37,17 @@ export class OpenAIOperations {
       ) {
         // 🚀 Novo endpoint (responses.create)
         const response = await this.openai.responses.create({
-          model: this.model_name,
-          input: this.messages.map(m => `${m.role}: ${m.content}`).join("\n"),
-          temperature: 1,
-          max_output_tokens: 256,
+        model: this.model_name,
+        input: [
+        {
+        role: "user",
+        content: text
+      }
+        ],
+        temperature: 1,
+        max_output_tokens: 256,
         });
+
 
         agent_response =
           response.output?.[0]?.content?.[0]?.text ||
