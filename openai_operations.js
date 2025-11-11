@@ -22,26 +22,25 @@ export class OpenAIOperations {
   }
 
   // =======================================================================
-  // PRINCIPAL — chamada para GPT (usado pelo !gpt no chat)
+  // 🚀 PRINCIPAL — chamada GPT (usado pelo !gpt)
   // =======================================================================
   async make_openai_call(text) {
     try {
-      // adiciona a mensagem do usuário ao histórico
+      // Adiciona a mensagem do usuário ao histórico
       this.messages.push({ role: "user", content: text });
       this.check_history_length();
 
       let agent_response = "";
-
-      // 🚀 Envia log do texto que vai pra API
       console.log("🟢 Enviando para OpenAI:", text);
 
-      // Detecta automaticamente se usa o endpoint novo (GPT-5 / 4o) ou antigo
+      // ==============================================================
+      // GPT-5 / 4.1 / 4o (novo endpoint responses.create)
+      // ==============================================================
       if (
         this.model_name.startsWith("gpt-5") ||
         this.model_name.startsWith("gpt-4.1") ||
         this.model_name.startsWith("gpt-4o")
       ) {
-        // 🔹 Novo endpoint (responses.create)
         const response = await this.openai.responses.create({
           model: this.model_name,
           input: [
@@ -56,21 +55,31 @@ export class OpenAIOperations {
             }
           ],
           temperature: 1,
-          max_output_tokens: 256,
+          max_output_tokens: 512, // aumentei pra evitar truncar
         });
 
-        // Log completo da resposta bruta pra debug
         console.log("🔍 Full API response:", JSON.stringify(response, null, 2));
 
-        // Tenta extrair texto em todos os formatos possíveis
-        agent_response =
-          response.output_text ||
-          response.output?.[0]?.content?.[0]?.text ||
-          response.output?.[0]?.content?.text ||
-          response.output ||
-          "Sem resposta do modelo.";
+        // 🧩 Novo formato de saída do GPT-5
+        if (response.output_text && response.output_text.trim() !== "") {
+          agent_response = response.output_text;
+        } else if (response.output && response.output.length > 0) {
+          const textParts = response.output
+            .map((item) => {
+              if (item.type === "output_text") return item.content?.[0]?.text;
+              if (item.type === "reasoning") return item.summary?.join(" ");
+              return null;
+            })
+            .filter(Boolean);
+          agent_response = textParts.join("\n").trim();
+        } else {
+          agent_response = "Sem resposta do modelo.";
+        }
+
+      // ==============================================================
+      // GPT-3.5 ou anterior (chat.completions)
+      // ==============================================================
       } else {
-        // 💬 Endpoint antigo (chat.completions.create)
         const response = await this.openai.chat.completions.create({
           model: this.model_name,
           messages: this.messages,
@@ -86,11 +95,18 @@ export class OpenAIOperations {
           "Sem resposta do modelo.";
       }
 
+      // ==============================================================
+      // Logs e retorno
+      // ==============================================================
       console.log(`🤖 Agent Response: ${agent_response}`);
+
       this.messages.push({ role: "assistant", content: agent_response });
+
+      // Garante que é string antes de enviar pra Twitch
       if (typeof agent_response !== "string") {
-      agent_response = JSON.stringify(agent_response);
+        agent_response = JSON.stringify(agent_response);
       }
+
       return agent_response;
 
     } catch (error) {
@@ -104,7 +120,7 @@ export class OpenAIOperations {
   }
 
   // =======================================================================
-  // Modo PROMPT (usado se GPT_MODE = PROMPT)
+  // ✏️ Modo PROMPT (usado se GPT_MODE = PROMPT)
   // =======================================================================
   async make_openai_call_completion(text) {
     try {
