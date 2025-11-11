@@ -35,9 +35,10 @@ export class OpenAIOperations {
         this.model_name.startsWith("gpt-4.1") ||
         this.model_name.startsWith("gpt-4o")
       ) {
+        
+        console.log("🟢 Enviando para OpenAI:", text);
         // 🚀 Novo endpoint (responses.create)
         const response = await this.openai.responses.create({
-          console.log("🟢 Enviando para OpenAI:", text);
           model: this.model_name,
           input: [
             {
