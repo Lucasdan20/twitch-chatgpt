@@ -109,52 +109,54 @@ bot.connect(
 );
 
 // ------------------------------
-// 💬 MENSAGENS DO CHAT
+// 💬 MENSAGENS DO CHAT (memória viva + filtro de bots)
 // ------------------------------
 
 bot.onMessage(async (channel, user, message, self) => {
   if (self) return;
 
-  const currentTime = Date.now();
-  const elapsedTime = (currentTime - lastResponseTime) / 1000;
-
   const chName = normChannel(channel);
-  const openaiOps = opsByChannel.get(chName) || opsByChannel.values().next().value;
   const memory = memoryByChannel.get(chName);
+  const openaiOps = opsByChannel.get(chName) || opsByChannel.values().next().value;
 
   if (!memory) {
     console.error(`Nenhuma memória encontrada para o canal ${chName}`);
     return;
   }
 
-  if (ENABLE_CHANNEL_POINTS === 'true' && user['msg-id'] === 'highlighted-message') {
-    if (elapsedTime < COOLDOWN_DURATION) {
-      bot.say(channel, `Cooldown ativo. Espere ${COOLDOWN_DURATION - elapsedTime.toFixed(1)}s antes de mandar outra mensagem.`);
-      return;
-    }
-    lastResponseTime = currentTime;
-    const response = await openaiOps.make_openai_call(message);
-    bot.say(channel, response);
+  // 🧩 Ignora bots automáticos (exceto LivePix)
+  const botUsernames = ['streamelements', 'streamlabs', 'nightbot', 'moobot', 'soundalerts', 'fossabot'];
+  const isBotMessage = botUsernames.some(bot => user.username?.toLowerCase().includes(bot));
+  if (isBotMessage && !user.username.toLowerCase().includes('livepix')) {
+    console.log(`🤖 Ignorando mensagem automática de ${user.username}`);
+    return;
   }
 
+  // 💬 Salva toda mensagem no banco (mesmo sem comando)
+  console.log(`💬 [${chName}] (${user.username}): ${message}`);
+  memory.saveUser(user.username, "", [
+    { role: "user", content: message }
+  ]);
+
+  // 🔎 Se não for comando (!gpt etc), só registra e sai
   const command = commandNames.find(cmd => message.toLowerCase().startsWith(cmd));
   if (!command) return;
 
+  // 🔄 Cooldown
+  const currentTime = Date.now();
+  const elapsedTime = (currentTime - lastResponseTime) / 1000;
   if (elapsedTime < COOLDOWN_DURATION) {
     bot.say(channel, `Cooldown ativo. Espere ${COOLDOWN_DURATION - elapsedTime.toFixed(1)}s antes de mandar outra mensagem.`);
     return;
   }
   lastResponseTime = currentTime;
 
+  // 🧠 Recupera memória do usuário
+  const userMem = memory.getUser(user.username);
   let text = message.slice(command.length).trim();
   if (SEND_USERNAME === 'true') {
     text = `Mensagem do usuário ${user.username}: ${text}`;
   }
-
-  // ------------------------------
-  // 🧠 CARREGA MEMÓRIA DO USUÁRIO
-  // ------------------------------
-  const userMem = memory.getUser(user.username);
 
   const memoryPrompt = `
 Você é a Jurema neste canal (${chName}).
@@ -166,42 +168,19 @@ ${userMem.history.slice(-4).map(m => `${m.role}: ${m.content}`).join("\n")}
   const fullPrompt = `${memoryPrompt}\nUsuário: ${text}`;
   const response = await openaiOps.make_openai_call(fullPrompt);
 
-  // Atualiza histórico e salva no banco
+  // 🧾 Atualiza histórico e salva resposta no banco
   userMem.history.push({ role: "user", content: text });
   userMem.history.push({ role: "assistant", content: response });
-
-  // Faz resumo automático de tempos em tempos
-  if (userMem.history.length > 10) {
-    try {
-      const resumo = await openaiOps.make_openai_call(
-        `Resuma a personalidade e preferências desse usuário:\n${JSON.stringify(userMem.history)}`
-      );
-      userMem.summary = resumo;
-      userMem.history = userMem.history.slice(-6);
-    } catch (err) {
-      console.error("Erro ao gerar resumo:", err);
-    }
-  }
-
   memory.saveUser(user.username, userMem.summary, userMem.history);
 
-  // Envia pro chat
+  console.log(`💾 [${chName}] Resposta gerada: ${response.substring(0, 120)}...`);
+
+  // 📤 Envia pro chat
   if (response.length > maxLength) {
     const messages = response.match(new RegExp(`.{1,${maxLength}}`, 'g'));
-    messages.forEach((msg, index) => {
-      setTimeout(() => bot.say(channel, msg), 1000 * index);
-    });
+    messages.forEach((msg, index) => setTimeout(() => bot.say(channel, msg), 1000 * index));
   } else {
     bot.say(channel, response);
-  }
-
-  if (ENABLE_TTS === 'true') {
-    try {
-      const ttsAudioUrl = await bot.sayTTS(channel, response, user['userstate']);
-      notifyFileChange(ttsAudioUrl);
-    } catch (error) {
-      console.error('TTS Error:', error);
-    }
   }
 });
 
