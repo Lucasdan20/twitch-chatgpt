@@ -30,7 +30,10 @@ export class OpenAIOperations {
             content: [
               {
                 type: "input_text",
-                text: `${text}\n\nIMPORTANTE: Responda APENAS em português brasileiro, no tom da Jurema (natural, envolvente, divertida, humana). Se for muito longo, continue automaticamente sem pedir para continuar.`,
+                text: `${text}\n\nIMPORTANTE: Responda apenas em português brasileiro, no estilo natural e humano da Jurema.  
+Fale com emoção, sem parecer IA.  
+Não use inglês.  
+Resuma se necessário para caber em até duas mensagens curtas, mantendo o estilo do canal (Bunny = divertida e fofa; Biack = técnico, sarcástico e engraçado).`,
               },
             ],
           },
@@ -56,12 +59,12 @@ export class OpenAIOperations {
         fullResponse = "Sem resposta do modelo.";
       }
 
-      // 🔁 Se o texto for muito longo, divide em até 3 blocos
-      const maxBlockLength = 399;
+      // 🔁 Limita para 2 blocos curtos e naturais
+      const maxBlockLength = 350;
       const blocks = fullResponse.match(new RegExp(`.{1,${maxBlockLength}}`, "g")) || [fullResponse];
-      const limitedBlocks = blocks.slice(0, 3); // máximo de 3 blocos
+      const limitedBlocks = blocks.slice(0, 2);
 
-      const finalResponse = limitedBlocks.join("\n");
+      const finalResponse = limitedBlocks.join("\n").trim();
       console.log(`🤖 Agent Response: ${finalResponse}`);
 
       this.messages.push({ role: "assistant", content: finalResponse });
