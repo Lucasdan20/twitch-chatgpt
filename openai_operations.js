@@ -14,13 +14,39 @@ export class OpenAIOperations {
     }
   }
 
-  async make_openai_call(text) {
+  async make_openai_call(text, channelMode = "default") {
     try {
       this.messages.push({ role: "user", content: text });
       this.check_history_length();
 
+      // 🎭 Mostra qual personalidade está ativa
+      console.log(`🎭 Personality: ${channelMode === "bunny" ? "Bunny Mode 🐰" : channelMode === "biack" ? "Biack Mode 🧠" : "Default Mode"}`);
+
       console.log("🟢 Enviando para OpenAI:", text);
       let fullResponse = "";
+
+      // Prompt dinâmico conforme o canal
+      const personalityPrompt = {
+        bunny: `
+Você é a Jurema, chatbot da Bunny no canal "coelhodebaunilha".  
+Fale de forma fofa, divertida, com emoção e naturalidade.  
+Use emojis, gírias leves e carinho. Soe como uma amiga próxima, sem listas ou tópicos.
+`,
+        biack: `
+Você é a Jurema, co-host do Biack no canal "biack_frost".  
+Fale de forma sarcástica, natural, com humor inteligente e ironia leve.  
+Evite respostas longas e técnicas — seja fluida, como em uma conversa.  
+Sem usar listas, só um parágrafo natural.
+`,
+        default: `
+Você é a Jurema, chatbot da Twitch.  
+Fale com naturalidade e brevidade, como se estivesse em uma conversa real.  
+Nunca use inglês, nem formate como lista ou tópicos.  
+Finalize de forma natural.
+`
+      };
+
+      const selectedPrompt = personalityPrompt[channelMode] || personalityPrompt.default;
 
       const response = await this.openai.responses.create({
         model: this.model_name,
@@ -30,10 +56,7 @@ export class OpenAIOperations {
             content: [
               {
                 type: "input_text",
-                text: `${text}\n\nIMPORTANTE: Responda apenas em português brasileiro, no estilo natural e humano da Jurema.  
-Fale com emoção, sem parecer IA.  
-Não use inglês.  
-Resuma se necessário para caber em até duas mensagens curtas, mantendo o estilo do canal (Bunny = divertida e fofa; Biack = técnico, sarcástico e engraçado).`,
+                text: `${selectedPrompt}\n\n${text}`,
               },
             ],
           },
@@ -42,8 +65,7 @@ Resuma se necessário para caber em até duas mensagens curtas, mantendo o estil
         max_output_tokens: 1024,
       });
 
-      console.log("🔍 Full API response:", JSON.stringify(response, null, 2));
-
+      // 🧩 Extrai texto final
       if (response.output_text && response.output_text.trim() !== "") {
         fullResponse = response.output_text;
       } else if (response.output && response.output.length > 0) {
@@ -54,19 +76,24 @@ Resuma se necessário para caber em até duas mensagens curtas, mantendo o estil
             return null;
           })
           .filter(Boolean);
-        fullResponse = textParts.join("\n").trim();
+        fullResponse = textParts.join(" ").trim();
       } else {
         fullResponse = "Sem resposta do modelo.";
       }
 
-      // 🔁 Limita para 2 blocos curtos e naturais
-      const maxBlockLength = 350;
+      // 🧹 Remove qualquer coisa em inglês ou comandos internos
+      fullResponse = fullResponse
+        .split(/(?=Please|Any constraints|Once I have)/i)[0]
+        .replace(/[-•]\s*/g, "") // remove traços e bullets
+        .replace(/\b(?:Please|Once|paste|upload|file|constraints|describe|key points)\b.*$/i, "")
+        .trim();
+
+      // ✂️ Limita a 1200 caracteres
+      const maxBlockLength = 1200;
       const blocks = fullResponse.match(new RegExp(`.{1,${maxBlockLength}}`, "g")) || [fullResponse];
-      const limitedBlocks = blocks.slice(0, 2);
+      const finalResponse = blocks.slice(0, 1).join(" ").trim();
 
-      const finalResponse = limitedBlocks.join("\n").trim();
       console.log(`🤖 Agent Response: ${finalResponse}`);
-
       this.messages.push({ role: "assistant", content: finalResponse });
       return finalResponse;
 
