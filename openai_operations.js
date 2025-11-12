@@ -19,28 +19,44 @@ export class OpenAIOperations {
       this.messages.push({ role: "user", content: text });
       this.check_history_length();
 
-      console.log(`🎭 Personality: ${channelMode === "bunny" ? "Bunny Mode 🐰" : channelMode === "biack" ? "Biack Mode 🧠" : "Default Mode"}`);
+      // 🎭 Indicação de modo
+      console.log(
+        `🎭 Personality: ${
+          channelMode === "bunny"
+            ? "Bunny Mode 🐰"
+            : channelMode === "biack"
+            ? "Biack Mode 🧠"
+            : "Default Mode"
+        }`
+      );
 
+      // 🎙️ Personalidades
       const personalityPrompt = {
         bunny: `
 Você é a Jurema, co-host da Bunny no canal "coelhodebaunilha".
-Fale com doçura, humor leve e carisma. Use gírias fofas tipo “ain”, “meudeus”, “socorro”, mas com naturalidade.
-Evite listas e travessões, apenas um parágrafo fluido e envolvente.
-Fale sempre em português brasileiro.
+Fale com leveza e carisma, de forma espontânea, divertida e envolvente.
+Use expressões como “ain”, “meudeus”, “socorro” ou “aiii”, mas sem exagero.
+Nunca use listas, tópicos ou travessões. Fale sempre em português, em uma única resposta fluida.
+Evite continuar respostas — tudo deve caber em um único parágrafo.
 `,
         biack: `
 Você é a Jurema, co-pilot do Biack no canal "biack_frost".
-Seu estilo é leve, sarcástico e direto. Usa humor inteligente e ironia sutil.
-Nada de listas, tópicos ou explicações técnicas. Só papo natural e realista.
+Seu estilo é sarcástico, rápido, natural e com humor afiado.
+Fale como se estivesse num chat de live, sem listas, tópicos ou travessões.
+Nunca repita a pergunta, apenas responda de forma direta e divertida.
+Tudo deve caber em uma única mensagem curta e natural.
 `,
         default: `
-Você é a Jurema, assistente simpática de um canal da Twitch.
-Responda como se estivesse no chat ao vivo — natural, sem listas, e sempre em português.
+Você é a Jurema, co-host de um canal da Twitch.
+Fale como uma pessoa real no chat, em português brasileiro.
+Nunca use listas, tópicos, nem explicações. Apenas uma resposta única e breve.
 `
       };
 
-      const selectedPrompt = personalityPrompt[channelMode] || personalityPrompt.default;
+      const selectedPrompt =
+        personalityPrompt[channelMode] || personalityPrompt.default;
 
+      // 🔥 Chamada à API
       const response = await this.openai.chat.completions.create({
         model: this.model_name,
         messages: [
@@ -48,31 +64,31 @@ Responda como se estivesse no chat ao vivo — natural, sem listas, e sempre em 
           ...this.messages.slice(-this.history_length),
           { role: "user", content: text },
         ],
-        temperature: 0.85,
-        max_tokens: 900,
+        temperature: 0.9,
+        max_tokens: 500, // limite seguro para evitar respostas longas
       });
 
-      let finalResponse = response.choices?.[0]?.message?.content || "Sem resposta do modelo.";
+      // 🧩 Pega resposta e limpa
+      let finalResponse =
+        response.choices?.[0]?.message?.content || "Sem resposta do modelo.";
 
-      // 🧹 Limpeza total (remove inglês e travessões)
       finalResponse = finalResponse
-        .replace(/[-•]\s*/g, "")
-        .replace(/Please|constraints|Once I have|paste|upload|file|describe/gi, "")
-        .replace(/\b[A-Za-z]{3,}\b/g, (w) => (/[A-Za-z]/.test(w) ? "" : w))
+        .replace(/[-•]\s*/g, "") // remove bullets e travessões
+        .replace(/\b(?:Please|constraints|Once I have|paste|upload|file|describe)\b.*$/gi, "")
+        .replace(/[A-Za-z]{4,}/g, "") // remove qualquer palavra longa em inglês
         .trim();
 
-      // ✂️ Limita a 1200 caracteres
-      const maxBlockLength = 1200;
-      if (finalResponse.length > maxBlockLength)
-        finalResponse = finalResponse.slice(0, maxBlockLength).trim() + "...";
+      // ✂️ Garante que só manda UMA mensagem
+      if (finalResponse.length > 1200)
+        finalResponse = finalResponse.slice(0, 1180).trim() + "…";
 
       console.log("🤖 Resposta final:", finalResponse);
+
       this.messages.push({ role: "assistant", content: finalResponse });
       return finalResponse;
-
     } catch (error) {
       console.error("❌ Erro OpenAI:", error);
-      return "Deu tilt aqui rapidinho, tenta repetir a mensagem 😅";
+      return "Deu tilt aqui rapidinho, tenta repetir 😅";
     }
   }
 }
