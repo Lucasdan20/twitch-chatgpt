@@ -2,16 +2,14 @@ import OpenAI from "openai";
 
 export class OpenAIOperations {
   constructor(file_context, openai_key, model_name, history_length) {
-    // guarda só o contexto base do arquivo
-    this.baseContext = file_context || "";
+    // NÃO usamos mais o file_context pra nada
     this.openai = new OpenAI({ apiKey: openai_key });
     this.model_name = model_name;
-    this.history_length = history_length; // não vamos usar por enquanto
+    this.history_length = history_length; // deixei aqui só pra compatibilidade
   }
 
   check_history_length() {
-    // deixei aqui só pra não quebrar nada que chame esse método,
-    // mas por enquanto não usamos histórico.
+    // não estamos usando histórico por enquanto
     return;
   }
 
@@ -47,9 +45,6 @@ Regras gerais:
 - Não use listas, tópicos, "-" ou "•". Escreva em frases normais.
 - Nunca peça para colar trechos, nem fale sobre "contexto anterior" ou "please paste".
 - Seja direta, natural e com no máximo umas 3–4 frases.
-
-Contexto do canal:
-${this.baseContext}
       `.trim();
 
       console.log("🎭 Modo:", channelMode);
