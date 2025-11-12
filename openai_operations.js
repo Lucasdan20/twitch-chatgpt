@@ -2,93 +2,92 @@ import OpenAI from "openai";
 
 export class OpenAIOperations {
   constructor(file_context, openai_key, model_name, history_length) {
-    this.messages = [{ role: "system", content: file_context }];
+    // guarda só o contexto base do arquivo
+    this.baseContext = file_context || "";
     this.openai = new OpenAI({ apiKey: openai_key });
     this.model_name = model_name;
-    this.history_length = history_length;
+    this.history_length = history_length; // não vamos usar por enquanto
   }
 
   check_history_length() {
-    if (this.messages.length > this.history_length * 2 + 1) {
-      this.messages.splice(1, 2);
-    }
+    // deixei aqui só pra não quebrar nada que chame esse método,
+    // mas por enquanto não usamos histórico.
+    return;
   }
 
   async make_openai_call(text, channelMode = "default") {
     try {
-      this.messages.push({ role: "user", content: text });
-      this.check_history_length();
-
-      // 🎭 Indicação de modo
-      console.log(
-        `🎭 Personality: ${
-          channelMode === "bunny"
-            ? "Bunny Mode 🐰"
-            : channelMode === "biack"
-            ? "Biack Mode 🧠"
-            : "Default Mode"
-        }`
-      );
-
-      // 🎙️ Personalidades
+      // 🎭 personalidade por canal
       const personalityPrompt = {
         bunny: `
 Você é a Jurema, co-host da Bunny no canal "coelhodebaunilha".
-Fale com leveza e carisma, de forma espontânea, divertida e envolvente.
-Use expressões como “ain”, “meudeus”, “socorro” ou “aiii”, mas sem exagero.
-Nunca use listas, tópicos ou travessões. Fale sempre em português, em uma única resposta fluida.
-Evite continuar respostas — tudo deve caber em um único parágrafo.
+Fale de forma fofa, divertida e carinhosa, como amiga de chat.
+Use emojis às vezes, gírias leves e muito afeto.
 `,
         biack: `
 Você é a Jurema, co-pilot do Biack no canal "biack_frost".
-Seu estilo é sarcástico, rápido, natural e com humor afiado.
-Fale como se estivesse num chat de live, sem listas, tópicos ou travessões.
-Nunca repita a pergunta, apenas responda de forma direta e divertida.
-Tudo deve caber em uma única mensagem curta e natural.
+Fale com humor, um pouco de sarcasmo e vibe gamer, mas sempre simpática.
+Nada de linguagem técnica demais, é papo de chat.
 `,
         default: `
-Você é a Jurema, co-host de um canal da Twitch.
-Fale como uma pessoa real no chat, em português brasileiro.
-Nunca use listas, tópicos, nem explicações. Apenas uma resposta única e breve.
+Você é a Jurema, bot simpática de um canal da Twitch.
+Fale como uma pessoa real do chat, sempre em português.
 `
       };
 
-      const selectedPrompt =
+      const selectedPersonality =
         personalityPrompt[channelMode] || personalityPrompt.default;
 
-      // 🔥 Chamada à API
+      const systemPrompt = `
+${selectedPersonality}
+
+Regras gerais:
+- Fale SEMPRE em português brasileiro.
+- Responda em UMA mensagem única, sem dividir em partes.
+- Não use listas, tópicos, "-" ou "•". Escreva em frases normais.
+- Nunca peça para colar trechos, nem fale sobre "contexto anterior" ou "please paste".
+- Seja direta, natural e com no máximo umas 3–4 frases.
+
+Contexto do canal:
+${this.baseContext}
+      `.trim();
+
+      console.log("🎭 Modo:", channelMode);
+      console.log("🟢 Enviando para OpenAI:", text);
+
       const response = await this.openai.chat.completions.create({
         model: this.model_name,
         messages: [
-          { role: "system", content: selectedPrompt },
-          ...this.messages.slice(-this.history_length),
+          { role: "system", content: systemPrompt },
           { role: "user", content: text },
         ],
         temperature: 0.9,
-        max_tokens: 1200, // limite seguro para evitar respostas longas
+        max_tokens: 500,
       });
 
-      // 🧩 Pega resposta e limpa
       let finalResponse =
         response.choices?.[0]?.message?.content || "Sem resposta do modelo.";
 
+      // limpeza extra de lixo em inglês ou formato estranho
       finalResponse = finalResponse
-        .replace(/[-•]\s*/g, "") // remove bullets e travessões
-        .replace(/\b(?:Please|constraints|Once I have|paste|upload|file|describe)\b.*$/gi, "")
-        .replace(/[A-Za-z]{4,}/g, "") // remove qualquer palavra longa em inglês
+        .replace(/[-•]\s*/g, "")                               // tira bullets
+        .replace(/Please|constraints|paste|upload|file/gi, "") // tira restos em inglês
         .trim();
 
-      // ✂️ Garante que só manda UMA mensagem
-      if (finalResponse.length > 1200)
+      if (finalResponse.length > 1200) {
         finalResponse = finalResponse.slice(0, 1180).trim() + "…";
+      }
 
       console.log("🤖 Resposta final:", finalResponse);
-
-      this.messages.push({ role: "assistant", content: finalResponse });
       return finalResponse;
     } catch (error) {
       console.error("❌ Erro OpenAI:", error);
-      return "Deu tilt aqui rapidinho, tenta repetir 😅";
+      return "Deu um tilt rápido aqui, tenta mandar de novo 😅";
     }
+  }
+
+  // se em algum lugar ainda chamarem isso, deixo uma versão simples
+  async make_openai_call_completion(text) {
+    return this.make_openai_call(text);
   }
 }
