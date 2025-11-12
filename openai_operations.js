@@ -65,7 +65,7 @@ Nunca use listas, tópicos, nem explicações. Apenas uma resposta única e brev
           { role: "user", content: text },
         ],
         temperature: 0.9,
-        max_tokens: 500, // limite seguro para evitar respostas longas
+        max_tokens: 1200, // limite seguro para evitar respostas longas
       });
 
       // 🧩 Pega resposta e limpa
