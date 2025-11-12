@@ -19,91 +19,60 @@ export class OpenAIOperations {
       this.messages.push({ role: "user", content: text });
       this.check_history_length();
 
-      // 🎭 Mostra qual personalidade está ativa
       console.log(`🎭 Personality: ${channelMode === "bunny" ? "Bunny Mode 🐰" : channelMode === "biack" ? "Biack Mode 🧠" : "Default Mode"}`);
 
-      console.log("🟢 Enviando para OpenAI:", text);
-      let fullResponse = "";
-
-      // Prompt dinâmico conforme o canal
       const personalityPrompt = {
         bunny: `
-Você é a Jurema, chatbot da Bunny no canal "coelhodebaunilha".  
-Fale de forma fofa, divertida, com emoção e naturalidade.  
-Use emojis, gírias leves e carinho. Soe como uma amiga próxima, sem listas ou tópicos.
+Você é a Jurema, co-host da Bunny no canal "coelhodebaunilha".
+Fale com doçura, humor leve e carisma. Use gírias fofas tipo “ain”, “meudeus”, “socorro”, mas com naturalidade.
+Evite listas e travessões, apenas um parágrafo fluido e envolvente.
+Fale sempre em português brasileiro.
 `,
         biack: `
-Você é a Jurema, co-host do Biack no canal "biack_frost".  
-Fale de forma sarcástica, natural, com humor inteligente e ironia leve.  
-Evite respostas longas e técnicas — seja fluida, como em uma conversa.  
-Sem usar listas, só um parágrafo natural.
+Você é a Jurema, co-pilot do Biack no canal "biack_frost".
+Seu estilo é leve, sarcástico e direto. Usa humor inteligente e ironia sutil.
+Nada de listas, tópicos ou explicações técnicas. Só papo natural e realista.
 `,
         default: `
-Você é a Jurema, chatbot da Twitch.  
-Fale com naturalidade e brevidade, como se estivesse em uma conversa real.  
-Nunca use inglês, nem formate como lista ou tópicos.  
-Finalize de forma natural.
+Você é a Jurema, assistente simpática de um canal da Twitch.
+Responda como se estivesse no chat ao vivo — natural, sem listas, e sempre em português.
 `
       };
 
       const selectedPrompt = personalityPrompt[channelMode] || personalityPrompt.default;
 
-      const response = await this.openai.responses.create({
+      const response = await this.openai.chat.completions.create({
         model: this.model_name,
-        input: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "input_text",
-                text: `${selectedPrompt}\n\n${text}`,
-              },
-            ],
-          },
+        messages: [
+          { role: "system", content: selectedPrompt },
+          ...this.messages.slice(-this.history_length),
+          { role: "user", content: text },
         ],
-        temperature: 0.9,
-        max_output_tokens: 1024,
+        temperature: 0.85,
+        max_tokens: 900,
       });
 
-      // 🧩 Extrai texto final
-      if (response.output_text && response.output_text.trim() !== "") {
-        fullResponse = response.output_text;
-      } else if (response.output && response.output.length > 0) {
-        const textParts = response.output
-          .map((item) => {
-            if (item.type === "output_text") return item.content?.[0]?.text;
-            if (item.type === "reasoning") return item.summary?.join(" ");
-            return null;
-          })
-          .filter(Boolean);
-        fullResponse = textParts.join(" ").trim();
-      } else {
-        fullResponse = "Sem resposta do modelo.";
-      }
+      let finalResponse = response.choices?.[0]?.message?.content || "Sem resposta do modelo.";
 
-      // 🧹 Remove qualquer coisa em inglês ou comandos internos
-      fullResponse = fullResponse
-        .split(/(?=Please|Any constraints|Once I have)/i)[0]
-        .replace(/[-•]\s*/g, "") // remove traços e bullets
-        .replace(/\b(?:Please|Once|paste|upload|file|constraints|describe|key points)\b.*$/i, "")
+      // 🧹 Limpeza total (remove inglês e travessões)
+      finalResponse = finalResponse
+        .replace(/[-•]\s*/g, "")
+        .replace(/Please|constraints|Once I have|paste|upload|file|describe/gi, "")
+        .replace(/\b[A-Za-z]{3,}\b/g, (w) => (/[A-Za-z]/.test(w) ? "" : w))
         .trim();
 
       // ✂️ Limita a 1200 caracteres
       const maxBlockLength = 1200;
-      const blocks = fullResponse.match(new RegExp(`.{1,${maxBlockLength}}`, "g")) || [fullResponse];
-      const finalResponse = blocks.slice(0, 1).join(" ").trim();
+      if (finalResponse.length > maxBlockLength)
+        finalResponse = finalResponse.slice(0, maxBlockLength).trim() + "...";
 
-      console.log(`🤖 Agent Response: ${finalResponse}`);
+      console.log("🤖 Resposta final:", finalResponse);
       this.messages.push({ role: "assistant", content: finalResponse });
       return finalResponse;
 
     } catch (error) {
-      console.error("❌ OpenAI error:", error);
-      if (error.response) {
-        console.error("🔻 Response status:", error.response.status);
-        console.error("🔻 Response data:", JSON.stringify(error.response.data, null, 2));
-      }
-      return "Desculpe, algo deu errado. Tente novamente mais tarde.";
+      console.error("❌ Erro OpenAI:", error);
+      return "Deu tilt aqui rapidinho, tenta repetir a mensagem 😅";
     }
   }
 }
