@@ -186,6 +186,8 @@ ${userMem.history.slice(-4).map(m => `${m.role}: ${m.content}`).join("\n")}
 Mensagem nova:
 Usuário: ${text}
 `;
+const channelMode = chName.includes("coelho") ? "bunny" : chName.includes("biack") ? "biack" : "default";
+const response = await openaiOps.make_openai_call(memoryPrompt, channelMode);
 
 const response = await openaiOps.make_openai_call(fullPrompt);
 
